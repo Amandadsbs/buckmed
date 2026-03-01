@@ -5,52 +5,80 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-    
+
+    // Member check: group ID is in the user's profile groups array
     function isGroupMember(groupId) {
       return isAuthenticated() && (groupId in userDoc().groups);
     }
-    
+
+    // Admin check: user is the group's admin
     function isGroupAdmin(groupId) {
-      return isAuthenticated() && get(/databases/$(database)/documents/care_groups/$(groupId)).data.admin_id == request.auth.uid;
+      return isAuthenticated() &&
+        get(/databases/$(database)/documents/care_groups/$(groupId)).data.admin_id == request.auth.uid;
     }
 
+    // ── Users ──────────────────────────────────────────────────────────────
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // ── Care Groups ────────────────────────────────────────────────────────
     match /care_groups/{groupId} {
       allow read: if isGroupMember(groupId);
-      // Only the admin can modify it, but anyone can create if they set themselves as admin
-      allow create: if isAuthenticated() && request.resource.data.admin_id == request.auth.uid;
-      allow update, delete: if isGroupAdmin(groupId);
+
+      // Anyone can create a group if they set themselves as admin
+      allow create: if isAuthenticated() &&
+        request.resource.data.admin_id == request.auth.uid;
+
+      // Admin can update anything
+      allow update: if isGroupAdmin(groupId) ||
+        // OR: any authenticated user can add ONLY themselves to the members array
+        // (used when accepting an invite — the /invite page calls arrayUnion(uid))
+        (isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+          request.auth.uid in request.resource.data.members &&
+          !(request.auth.uid in resource.data.members));
+
+      allow delete: if isGroupAdmin(groupId);
     }
 
+    // ── Patients ───────────────────────────────────────────────────────────
     match /patients/{patientId} {
       allow read, update, delete: if isGroupMember(resource.data.group_id);
       allow create: if isGroupMember(request.resource.data.group_id);
     }
 
+    // ── Medications ────────────────────────────────────────────────────────
     match /medications/{medId} {
       allow read, update, delete: if isGroupMember(resource.data.group_id);
       allow create: if isGroupMember(request.resource.data.group_id);
     }
 
+    // ── Medication Logs ────────────────────────────────────────────────────
     match /medication_logs/{logId} {
       allow read, update, delete: if isGroupMember(resource.data.group_id);
       allow create: if isGroupMember(request.resource.data.group_id);
     }
 
+    // ── Group Invites ──────────────────────────────────────────────────────
     match /group_invites/{inviteId} {
+      // Any authenticated user can read a specific invite (needed to validate token)
       allow get: if isAuthenticated();
+      // Only admins can list all invites for their group
       allow list: if isGroupAdmin(resource.data.group_id);
+      // Only admins can create invites
       allow create: if isGroupAdmin(request.resource.data.group_id);
+      // Any authenticated user can update an invite (to mark it as "used")
       allow update: if isAuthenticated();
+      // Only admins can delete invites
+      allow delete: if isGroupAdmin(resource.data.group_id);
     }
 
+    // ── FCM Tokens ─────────────────────────────────────────────────────────
     match /fcm_tokens/{tokenId} {
       allow read, delete: if isAuthenticated() && request.auth.uid == resource.data.caregiver_id;
       allow create, update: if isAuthenticated() && request.resource.data.caregiver_id == request.auth.uid;
