@@ -21,6 +21,8 @@ interface AuthContextType {
     loading: boolean;
     setActiveGroup: (groupId: string) => Promise<void>;
     refreshProfile: () => Promise<void>;
+    /** Re-runs pending_invite check for current user. Returns true if a new group was joined. */
+    syncInvites: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -29,6 +31,7 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     setActiveGroup: async () => { },
     refreshProfile: async () => { },
+    syncInvites: async () => false,
 });
 
 function isInvitePage(): boolean {
@@ -226,10 +229,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return () => unsubscribe();
     }, []);
 
+    /** Re-reads the user Firestore doc and syncs local state. */
     const refreshProfile = async () => {
         if (!user) return;
         const snap = await getDoc(doc(db, "users", user.uid));
         if (snap.exists()) setProfile(snap.data() as UserProfile);
+    };
+
+    /**
+     * Manually re-checks pending_invites for the current user's email.
+     * Use this from the /welcome page "Verificar Acesso" button.
+     * Returns true if a new group was joined, false otherwise.
+     */
+    const syncInvites = async (): Promise<boolean> => {
+        if (!user?.email) return false;
+        try {
+            const joinedGroupId = await checkAndAcceptPendingInvite(user.uid, user.email);
+            if (!joinedGroupId) return false;
+
+            // Re-read the updated profile from Firestore
+            const snap = await getDoc(doc(db, "users", user.uid));
+            if (snap.exists()) {
+                const updated = snap.data() as UserProfile;
+                setProfile(updated);
+                console.log("[Auth] syncInvites ✅ joined group", joinedGroupId);
+            }
+            return true;
+        } catch (err: any) {
+            console.error("[Auth] syncInvites error:", err.message);
+            return false;
+        }
     };
 
     const setActiveGroup = async (groupId: string) => {
@@ -239,7 +268,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, profile, loading, setActiveGroup, refreshProfile }}>
+        <AuthContext.Provider value={{ user, profile, loading, setActiveGroup, refreshProfile, syncInvites }}>
             {children}
         </AuthContext.Provider>
     );
