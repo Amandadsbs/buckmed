@@ -1,13 +1,13 @@
 {
-  "name": "BuckMed – Medication Manager",
+  "name": "BuckMed – Gestão de Medicamentos",
   "short_name": "BuckMed",
-  "description": "Track medication schedules for pets and patients. Prevent double-dosing in real-time.",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#5fb8b0",
-  "theme_color": "#5fb8b0",
-  "orientation": "portrait-primary",
+  "description": "Gerencie medicamentos de pacientes e pets em tempo real. Evite doses duplicadas.",
+  "start_url": "/today",
   "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#5fb8b0",
   "lang": "pt-BR",
   "categories": [
     "health",
@@ -19,13 +19,25 @@
       "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -52,6 +64,14 @@
           "sizes": "192x192"
         }
       ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow"
     }
   ]
 }
