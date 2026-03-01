@@ -121,7 +121,44 @@ async function loadOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
             return profile;
         }
 
-        // Has no group → check pending invite first
+        // Has no group → Check if they are an ADMIN of any existing care_group (Legacy fix)
+        const groupsSnap = await getDocs(query(collection(db, "care_groups"), where("admin_id", "==", fbUser.uid)));
+        if (!groupsSnap.empty) {
+            const legacyGroupId = groupsSnap.docs[0].id;
+            console.log("[Auth] Restored legacy admin to group:", legacyGroupId);
+
+            // Retroactive Data Sync: Fix orphaned patients/meds/logs globally
+            // (One-time migration ran per admin login to capture old data)
+            const fixOrphans = async (collectionName: string) => {
+                const colRef = collection(db, collectionName);
+                const snapshot = await getDocs(colRef);
+                const batchUpdates: Promise<void>[] = [];
+                snapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    if (!data.group_id) {
+                        batchUpdates.push(updateDoc(docSnap.ref, { group_id: legacyGroupId }));
+                    }
+                });
+                if (batchUpdates.length > 0) {
+                    await Promise.all(batchUpdates);
+                    console.log(`[Auth] Synced ${batchUpdates.length} orphaned ${collectionName}`);
+                }
+            };
+
+            await fixOrphans("patients");
+            await fixOrphans("medications");
+            await fixOrphans("medication_logs");
+
+            const updated: UserProfile = {
+                id: profile.id || fbUser.uid,
+                groups: [legacyGroupId],
+                active_group: legacyGroupId,
+            };
+            await setDoc(userRef, updated, { merge: true });
+            return updated;
+        }
+
+        // Still no group → check pending invite by email
         if (fbUser.email) {
             const joinedGroupId = await checkAndAcceptPendingInvite(fbUser.uid, fbUser.email);
             if (joinedGroupId) {
@@ -144,7 +181,7 @@ async function loadOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
             };
         }
 
-        // No invite and no group → minimal profile, welcome page will handle
+        // No invite, no legacy group → minimal profile, welcome page will handle
         const minimal: UserProfile = {
             id: profile.id || fbUser.uid,
             groups: [],
