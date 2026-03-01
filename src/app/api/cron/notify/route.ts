@@ -4,15 +4,36 @@ import { format } from "date-fns";
 
 /**
  * POST /api/cron/notify
- * Triggered every minute by an external scheduler (e.g. Vercel Cron, GitHub Actions).
- * Finds all medication logs due within the next minute and sends WhatsApp reminders.
+ * Triggered every minute by an external cron service (e.g. cron-job.org).
+ * Finds medication logs due at the current time and sends push/WhatsApp reminders.
  *
- * Requires header: Authorization: Bearer {CRON_SECRET}
+ * Authentication:
+ *   Header:  Authorization: Bearer <CRON_SECRET>
+ *   — OR —
+ *   Query:   ?secret=<CRON_SECRET>
  */
-export async function POST(req: NextRequest) {
-    // Verify cron secret to prevent unauthorized triggering
+
+function isAuthorized(req: NextRequest): boolean {
+    const secret = process.env.CRON_SECRET;
+    if (!secret) {
+        // Warn in logs but don't hard-block if env is not configured yet
+        console.warn("[cron/notify] CRON_SECRET env var is not set — endpoint is unsecured!");
+        return true;
+    }
+
+    // Check Authorization header: "Bearer <secret>"
     const authHeader = req.headers.get("authorization");
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (authHeader === `Bearer ${secret}`) return true;
+
+    // Fallback: check ?secret= query param (useful for cron-job.org URL-based auth)
+    const { searchParams } = new URL(req.url);
+    if (searchParams.get("secret") === secret) return true;
+
+    return false;
+}
+
+export async function POST(req: NextRequest) {
+    if (!isAuthorized(req)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -72,11 +93,11 @@ export async function POST(req: NextRequest) {
 
                 if (res.ok) sentCount++;
                 else {
-                    const body = await res.json();
-                    console.error("[Cron/Notify] WhatsApp error:", body.error);
+                    const body = await res.json().catch(() => ({}));
+                    console.error("[cron/notify] WhatsApp error:", body.error);
                 }
             } catch (err: any) {
-                console.error("[Cron/Notify] Fetch error:", err.message);
+                console.error("[cron/notify] Fetch error:", err.message);
             }
         }
     }
@@ -86,8 +107,10 @@ export async function POST(req: NextRequest) {
 
 /**
  * GET /api/cron/notify
- * Health check for monitoring.
+ * Also accepts GET requests — useful for cron services that only support GET.
+ * Requires the same CRON_SECRET via header or ?secret= query param.
  */
-export async function GET() {
-    return NextResponse.json({ ok: true, timestamp: new Date().toISOString() });
+export async function GET(req: NextRequest) {
+    // Delegate to the same POST logic so GET also works as a trigger
+    return POST(req);
 }
