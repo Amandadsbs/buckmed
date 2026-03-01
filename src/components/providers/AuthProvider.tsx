@@ -46,15 +46,21 @@ function isInvitePage(): boolean {
  */
 async function checkAndAcceptPendingInvite(uid: string, email: string): Promise<string | null> {
     try {
+        const normalizedEmail = email.toLowerCase().trim();
+        console.log(`[Auth] Checking invites for email: ${normalizedEmail}`);
+
         const invSnap = await getDocs(
             query(
                 collection(db, "pending_invites"),
-                where("email", "==", email.toLowerCase()),
+                where("email", "==", normalizedEmail),
                 where("status", "==", "pending")
             )
         );
 
-        if (invSnap.empty) return null;
+        if (invSnap.empty) {
+            console.log(`[Auth] Error: User logged in but no group or invite found.`);
+            return null;
+        }
 
         // Take the most recent invite if multiple exist
         const inviteDoc = invSnap.docs[0];
@@ -65,7 +71,7 @@ async function checkAndAcceptPendingInvite(uid: string, email: string): Promise<
         };
 
         const groupId = invite.group_id;
-        console.log("[Auth] Found pending invite for", email, "→ group", groupId);
+        console.log(`[Auth] Match found! Binding user to group: ${groupId}`);
 
         // 1. Add user to care_group.members
         await updateDoc(doc(db, "care_groups", groupId), {
@@ -79,12 +85,8 @@ async function checkAndAcceptPendingInvite(uid: string, email: string): Promise<
             active_group: groupId,
         }, { merge: true });
 
-        // 3. Mark invite as accepted
-        await updateDoc(inviteDoc.ref, {
-            status: "accepted",
-            accepted_by: uid,
-            accepted_at: new Date().toISOString(),
-        });
+        // 3. Delete the invitation record to clean up
+        await deleteDoc(inviteDoc.ref);
 
         console.log("[Auth] ✅ User", uid, "accepted invite and joined group", groupId);
         return groupId;

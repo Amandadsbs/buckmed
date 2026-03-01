@@ -79,22 +79,15 @@ service cloud.firestore {
     }
 
     // ── Pending Invites (email-based) ──────────────────────────────────────
-    // Admin creates them; the invited user can read their own (by email match)
-    // and update (to mark accepted). AuthProvider handles acceptance server-side via admin SDK.
     match /pending_invites/{inviteId} {
-      // Admin of the group can read, create, update, delete
       allow read, create, update, delete: if isGroupAdmin(resource.data.group_id) ||
         isGroupAdmin(request.resource.data.group_id);
 
-      // Invited user can read their own invite by email
       allow read: if isAuthenticated() && resource.data.email == request.auth.token.email;
-
-      // Any authenticated user can query pending_invites by email
-      // (needed for AuthProvider's checkAndAcceptPendingInvite)
       allow list: if isAuthenticated();
-
-      // Invited user can update their own invite (mark as accepted)
-      allow update: if isAuthenticated() && resource.data.email == request.auth.token.email;
+      
+      // Invited user can update (mark as accepted) or delete their own invite to clean up
+      allow update, delete: if isAuthenticated() && resource.data.email == request.auth.token.email;
     }
 
     // ── FCM Tokens ─────────────────────────────────────────────────────────
