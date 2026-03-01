@@ -87,14 +87,14 @@ export default function LoginPage() {
                         <div className="space-y-2">
                             <Label className="text-sm font-medium text-slate-700 pl-1">E-mail</Label>
                             <div className="relative">
-                                <Mail size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Mail size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                 <Input
                                     type="email"
                                     value={email}
                                     onChange={e => setEmail(e.target.value)}
                                     placeholder="seu@email.com"
                                     required
-                                    className="h-14 rounded-xl border-slate-200 bg-white pl-11 p-3 text-base shadow-sm focus-visible:ring-primary/20"
+                                    className="h-14 rounded-xl border-slate-200 bg-white pl-10 pr-4 py-3 text-base shadow-sm focus-visible:ring-primary/20"
                                 />
                             </div>
                         </div>
@@ -102,14 +102,14 @@ export default function LoginPage() {
                         <div className="space-y-2">
                             <Label className="text-sm font-medium text-slate-700 pl-1">Senha</Label>
                             <div className="relative">
-                                <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Lock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                                 <Input
                                     type="password"
                                     value={password}
                                     onChange={e => setPassword(e.target.value)}
                                     placeholder="••••••••"
                                     required
-                                    className="h-14 rounded-xl border-slate-200 bg-white pl-11 p-3 text-base shadow-sm focus-visible:ring-primary/20"
+                                    className="h-14 rounded-xl border-slate-200 bg-white pl-10 pr-4 py-3 text-base shadow-sm focus-visible:ring-primary/20"
                                 />
                             </div>
                         </div>
