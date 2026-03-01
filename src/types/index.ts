@@ -21,10 +21,16 @@ export type Caregiver = {
 export type Medication = {
     id: string;
     patient_id: string;
+    group_id?: string;
     name: string;
     dosage: string;
-    frequency: "daily" | "twice_daily" | "three_times_daily" | "weekly" | "custom";
-    times: string[]; // e.g. ["08:00", "20:00"]
+    /** Daily-style frequencies use `times[]`. Interval uses `interval_hours` + `next_dose_at`. */
+    frequency: "daily" | "twice_daily" | "three_times_daily" | "weekly" | "custom" | "interval";
+    times: string[];          // HH:MM array — used when frequency !== 'interval'
+    interval_hours?: number;  // e.g. 48, 72  — used when frequency === 'interval'
+    first_dose_at?: string;   // ISO datetime for the very first dose of an interval med
+    next_dose_at?: string;    // ISO datetime — when the next dose is due
+    last_taken_at?: string;   // ISO datetime — last time dose was marked done
     start_date: string;
     end_date?: string;
     notes?: string;

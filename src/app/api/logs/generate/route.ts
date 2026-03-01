@@ -12,6 +12,9 @@ interface MedData {
     name: string;
     dosage: string;
     frequency: string;
+    interval_hours?: number | null;
+    first_dose_at?: string | null;
+    next_dose_at?: string | null;
     notes?: string | null;
     start_date: string;   // "yyyy-MM-dd"
     end_date?: string | null;
@@ -74,6 +77,52 @@ export async function POST(req: NextRequest) {
         }
     }
 
+    // ── INTERVAL MEDICATION ─────────────────────────────────────────────────
+    if (medData.frequency === "interval" && medData.interval_hours && medData.first_dose_at) {
+        const intervalMs = Number(medData.interval_hours) * 3_600_000;
+        const endLimit = medData.end_date
+            ? new Date(medData.end_date + "T23:59:59")
+            : addDays(new Date(), MAX_FUTURE_DAYS);
+
+        let doseTime = new Date(medData.first_dose_at);
+        const batch = db.batch();
+        let count = 0;
+
+        while (doseTime <= endLimit) {
+            const isoKey = doseTime.toISOString().replace(/[:.]/g, "-");
+            const logId = `${medication_id}_interval_${isoKey}`;
+            const logRef = db.collection("medication_logs").doc(logId);
+            const existing = await logRef.get();
+
+            if (!existing.exists) {
+                const dateStr = format(doseTime, "yyyy-MM-dd");
+                const timeStr = `${String(doseTime.getHours()).padStart(2, "0")}:${String(doseTime.getMinutes()).padStart(2, "0")}`;
+                batch.set(logRef, {
+                    group_id: medData.group_id,
+                    medication_id,
+                    patient_id: medData.patient_id,
+                    caregiver_id: null,
+                    scheduled_date: dateStr,
+                    scheduled_time: timeStr,
+                    scheduled_at: doseTime.toISOString(),   // exact ISO for interval meds
+                    completed_at: null,
+                    created_at: new Date().toISOString(),
+                    medication: {
+                        ...medData,
+                        id: medication_id,
+                        patient: { id: medData.patient_id, name: patientName },
+                    },
+                });
+                count++;
+            }
+            doseTime = new Date(doseTime.getTime() + intervalMs);
+        }
+
+        if (count > 0) await batch.commit();
+        return NextResponse.json({ ok: true, generated: count, type: "interval" });
+    }
+
+    // ── DAILY MEDICATION ────────────────────────────────────────────────────
     const dates = buildDateRange(medData);
     if (dates.length === 0) {
         return NextResponse.json({ ok: true, generated: 0, reason: "no dates in range" });

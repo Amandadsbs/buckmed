@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
     collection, query, where, onSnapshot,
-    runTransaction, doc, orderBy,
+    runTransaction, doc, orderBy, updateDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { useAuth } from "@/components/providers/AuthProvider";
@@ -122,6 +122,8 @@ export default function MedChecklist() {
 
         try {
             const logRef = doc(db, "medication_logs", log.id);
+            const now = new Date();
+
             await runTransaction(db, async (tx) => {
                 const snap = await tx.get(logRef);
                 if (!snap.exists()) throw new Error("Log não encontrado");
@@ -135,11 +137,22 @@ export default function MedChecklist() {
                     const current = snap.data() as MedicationLog;
                     if (current.completed_at) throw new Error("JA_CONCLUIDO");
                     tx.update(logRef, {
-                        completed_at: new Date().toISOString(),
+                        completed_at: now.toISOString(),
                         caregiver_id: user?.uid ?? DEMO_CAREGIVER_ID,
                     });
                 }
             });
+
+            // For interval medications: update next_dose_at on the medication doc
+            const med = log.medication as any;
+            if (!currentlyDone && med?.frequency === "interval" && med?.interval_hours) {
+                const nextDose = new Date(now.getTime() + Number(med.interval_hours) * 3_600_000);
+                await updateDoc(doc(db, "medications", log.medication_id), {
+                    last_taken_at: now.toISOString(),
+                    next_dose_at: nextDose.toISOString(),
+                });
+            }
+
         } catch (err: any) {
             if (err.message !== "JA_CONCLUIDO") setError(err.message);
         } finally {
@@ -294,9 +307,22 @@ function MedCard({ log, isPending, isOffline, onToggleDone, demoCaregiverId }: {
     const completedByOther = isDone && log.caregiver_id !== demoCaregiverId;
     const completedByMe = isDone && log.caregiver_id === demoCaregiverId;
     const canUndo = completedByMe && !isOffline;
-
-    // Se concluiu por outro, desabilita a checkbox para o usuário atual
     const disabled = isPending || isOffline || (isDone && !canUndo);
+
+    const med = log.medication as any;
+    const isInterval = med?.frequency === "interval";
+
+    // Format next dose label for interval meds
+    let nextDoseLabel = "";
+    if (isInterval && med?.next_dose_at) {
+        try {
+            const d = new Date(med.next_dose_at);
+            nextDoseLabel = d.toLocaleString("pt-BR", {
+                day: "2-digit", month: "2-digit",
+                hour: "2-digit", minute: "2-digit",
+            });
+        } catch { /* noop */ }
+    }
 
     return (
         <Card
@@ -320,9 +346,30 @@ function MedCard({ log, isPending, isOffline, onToggleDone, demoCaregiverId }: {
                         }`}>
                         {log.medication?.name}
                     </p>
+
                     <p className="text-xs text-slate-500 font-medium">
-                        {log.medication?.dosage} • {log.medication?.patient?.name}
+                        {log.medication?.dosage}
+                        {" • "}
+                        {log.medication?.patient?.name}
                     </p>
+
+                    {/* Interval badge */}
+                    {isInterval && (
+                        <p className="text-[0.7rem] text-indigo-500 mt-1 font-semibold flex items-center gap-1">
+                            <Clock size={10} />
+                            A cada {med.interval_hours}h
+                            {!isDone && nextDoseLabel && (
+                                <span className="text-slate-400 font-normal">
+                                    {" • "} Próxima: {nextDoseLabel}
+                                </span>
+                            )}
+                            {isDone && (
+                                <span className="text-emerald-500 font-normal">
+                                    {" • "} Próxima atualizada
+                                </span>
+                            )}
+                        </p>
+                    )}
 
                     {completedByOther && (
                         <p className="text-[0.7rem] text-slate-400 mt-1 font-medium flex items-center gap-1">
@@ -331,7 +378,9 @@ function MedCard({ log, isPending, isOffline, onToggleDone, demoCaregiverId }: {
                     )}
                 </div>
 
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${isDone ? "bg-primary/5 text-primary/40" : "bg-primary/10 text-primary"
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${isInterval
+                    ? isDone ? "bg-indigo-50 text-indigo-300" : "bg-indigo-100 text-indigo-600"
+                    : isDone ? "bg-primary/5 text-primary/40" : "bg-primary/10 text-primary"
                     }`}>
                     <Pill size={18} strokeWidth={2.5} />
                 </div>
