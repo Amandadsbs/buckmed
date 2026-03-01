@@ -72,9 +72,23 @@ export default function MedChecklist() {
                     ...(d.data() as Omit<EnrichedLog, "id">),
                 }));
 
+                // ── Orphan filter: verify each medication still exists ──
+                // Collect unique medication IDs referenced by today's logs
+                const medIds = [...new Set(rawLogs.map((l) => l.medication_id).filter(Boolean))];
+                const validMedIds = new Set<string>();
+                await Promise.all(
+                    medIds.map(async (medId) => {
+                        const { getDoc: gd, doc: fd } = await import("firebase/firestore");
+                        const snap = await gd(fd(db, "medications", medId));
+                        if (snap.exists()) validMedIds.add(medId);
+                    })
+                );
+                // Keep only logs whose medication still exists
+                const liveLogs = rawLogs.filter((l) => validMedIds.has(l.medication_id));
+
                 const patientCache: Record<string, string> = {};
                 const enriched = await Promise.all(
-                    rawLogs.map(async (log) => {
+                    liveLogs.map(async (log) => {
                         if (log.medication?.patient?.name) return log;
 
                         const pid = (log as any).patient_id ?? log.medication?.patient_id;

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { doc, getDoc, deleteDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { ArrowLeft, Pill, Trash2, Loader2, Clock, CalendarDays, FileText, User, Pencil } from "lucide-react";
 
@@ -13,10 +13,14 @@ interface Medication {
     dosage: string;
     frequency: string;
     times: string[];
+    interval_hours?: number;
+    next_dose_at?: string;
+    first_dose_at?: string;
     start_date: string;
     end_date?: string;
     notes?: string;
     patient_id: string;
+    group_id: string;
 }
 
 const FREQ_LABEL: Record<string, string> = {
@@ -25,6 +29,7 @@ const FREQ_LABEL: Record<string, string> = {
     three_times_daily: "3× ao dia",
     weekly: "Semanal",
     custom: "Personalizado",
+    interval: "Intervalo de horas",
 };
 
 export default function MedDetailPage() {
@@ -55,10 +60,23 @@ export default function MedDetailPage() {
     }, [id, router]);
 
     const handleDelete = async () => {
-        if (!confirm(`Excluir "${med?.name}"? Esta ação não pode ser desfeita.`)) return;
+        if (!confirm(`Excluir "${med?.name}"? Todos os agendamentos associados também serão removidos.`)) return;
         setDeleting(true);
-        await deleteDoc(doc(db, "medications", id));
-        router.push("/meds");
+        try {
+            const res = await fetch("/api/meds/delete", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ medication_id: id }),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error ?? "Falha ao excluir medicamento");
+            }
+            router.push("/meds");
+        } catch (err: any) {
+            alert(err.message ?? "Erro ao excluir.");
+            setDeleting(false);
+        }
     };
 
     if (loading) {
@@ -131,24 +149,51 @@ export default function MedDetailPage() {
                         </div>
                         <div className="flex-1">
                             <p className="text-xs text-slate-400 m-0">Frequência</p>
-                            <p className="text-sm font-bold text-slate-800 m-0">{FREQ_LABEL[med.frequency] ?? med.frequency}</p>
+                            <p className="text-sm font-bold text-slate-800 m-0">
+                                {FREQ_LABEL[med.frequency] ?? med.frequency}
+                                {med.frequency === "interval" && med.interval_hours && (
+                                    <span className="ml-2 text-indigo-500 font-semibold text-xs">
+                                        (A cada {med.interval_hours}h)
+                                    </span>
+                                )}
+                            </p>
                         </div>
                     </div>
 
-                    {/* Times */}
-                    <div className="flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0 mt-0.5">
-                            <Clock size={14} className="text-slate-400" />
-                        </div>
-                        <div className="flex-1">
-                            <p className="text-xs text-slate-400 m-0">Horários</p>
-                            <div className="flex gap-1.5 flex-wrap mt-1">
-                                {med.times.map((t) => (
-                                    <span key={t} className="bg-primary/10 text-primary font-bold text-xs px-2.5 py-1 rounded-full">{t}</span>
-                                ))}
+                    {/* Next dose for interval meds */}
+                    {med.frequency === "interval" && med.next_dose_at && (
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center shrink-0">
+                                <Clock size={14} className="text-indigo-400" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-xs text-slate-400 m-0">Próxima dose</p>
+                                <p className="text-sm font-bold text-indigo-700 m-0">
+                                    {new Date(med.next_dose_at).toLocaleString("pt-BR", {
+                                        day: "2-digit", month: "2-digit",
+                                        hour: "2-digit", minute: "2-digit",
+                                    })}
+                                </p>
                             </div>
                         </div>
-                    </div>
+                    )}
+
+                    {/* Times (only for non-interval meds) */}
+                    {med.frequency !== "interval" && med.times?.length > 0 && (
+                        <div className="flex items-start gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0 mt-0.5">
+                                <Clock size={14} className="text-slate-400" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-xs text-slate-400 m-0">Horários</p>
+                                <div className="flex gap-1.5 flex-wrap mt-1">
+                                    {med.times.map((t) => (
+                                        <span key={t} className="bg-primary/10 text-primary font-bold text-xs px-2.5 py-1 rounded-full">{t}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Period */}
                     <div className="flex items-center gap-3">
