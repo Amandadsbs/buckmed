@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isGroupMember(groupId) {
+      return isAuthenticated() && (groupId in userDoc().groups);
+    }
+    
+    function isGroupAdmin(groupId) {
+      return isAuthenticated() && get(/databases/$(database)/documents/care_groups/$(groupId)).data.admin_id == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /care_groups/{groupId} {
+      allow read: if isGroupMember(groupId);
+      // Only the admin can modify it, but anyone can create if they set themselves as admin
+      allow create: if isAuthenticated() && request.resource.data.admin_id == request.auth.uid;
+      allow update, delete: if isGroupAdmin(groupId);
+    }
+
+    match /patients/{patientId} {
+      allow read, update, delete: if isGroupMember(resource.data.group_id);
+      allow create: if isGroupMember(request.resource.data.group_id);
+    }
+
+    match /medications/{medId} {
+      allow read, update, delete: if isGroupMember(resource.data.group_id);
+      allow create: if isGroupMember(request.resource.data.group_id);
+    }
+
+    match /medication_logs/{logId} {
+      allow read, update, delete: if isGroupMember(resource.data.group_id);
+      allow create: if isGroupMember(request.resource.data.group_id);
+    }
+
+    match /group_invites/{inviteId} {
+      allow get: if isAuthenticated();
+      allow list: if isGroupAdmin(resource.data.group_id);
+      allow create: if isGroupAdmin(request.resource.data.group_id);
+      allow update: if isAuthenticated();
+    }
+
+    match /fcm_tokens/{tokenId} {
+      allow read, delete: if isAuthenticated() && request.auth.uid == resource.data.caregiver_id;
+      allow create, update: if isAuthenticated() && request.resource.data.caregiver_id == request.auth.uid;
+    }
+  }
+}

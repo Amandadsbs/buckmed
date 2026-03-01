@@ -1,0 +1,51 @@
+{
+    "indexes": [
+        {
+            "collectionGroup": "medication_logs",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "group_id",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "scheduled_date",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "scheduled_time",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "medications",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "group_id",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "created_at",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "patients",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "group_id",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "name",
+                    "order": "ASCENDING"
+                }
+            ]
+        }
+    ],
+    "fieldOverrides": []
+}

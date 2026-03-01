@@ -1,0 +1,57 @@
+{
+  "name": "BuckMed – Medication Manager",
+  "short_name": "BuckMed",
+  "description": "Track medication schedules for pets and patients. Prevent double-dosing in real-time.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#5fb8b0",
+  "theme_color": "#5fb8b0",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "pt-BR",
+  "categories": [
+    "health",
+    "medical",
+    "lifestyle"
+  ],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Medicamentos de Hoje",
+      "short_name": "Hoje",
+      "description": "Ver checklist de medicamentos de hoje",
+      "url": "/today",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Adicionar Paciente",
+      "short_name": "Paciente",
+      "description": "Cadastrar novo paciente ou pet",
+      "url": "/patients/new",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
