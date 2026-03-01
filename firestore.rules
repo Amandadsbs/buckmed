@@ -10,12 +10,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // Member check: group ID is in the user's profile groups array
     function isGroupMember(groupId) {
       return isAuthenticated() && (groupId in userDoc().groups);
     }
 
-    // Admin check: user is the group's admin
     function isGroupAdmin(groupId) {
       return isAuthenticated() &&
         get(/databases/$(database)/documents/care_groups/$(groupId)).data.admin_id == request.auth.uid;
@@ -29,15 +27,11 @@ service cloud.firestore {
     // ── Care Groups ────────────────────────────────────────────────────────
     match /care_groups/{groupId} {
       allow read: if isGroupMember(groupId);
+      allow create: if isAuthenticated() && request.resource.data.admin_id == request.auth.uid;
 
-      // Anyone can create a group if they set themselves as admin
-      allow create: if isAuthenticated() &&
-        request.resource.data.admin_id == request.auth.uid;
-
-      // Admin can update anything
+      // Admin can update anything; OR any authenticated user can only add
+      // themselves to the members array (for invite acceptance)
       allow update: if isGroupAdmin(groupId) ||
-        // OR: any authenticated user can add ONLY themselves to the members array
-        // (used when accepting an invite — the /invite page calls arrayUnion(uid))
         (isAuthenticated() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
           request.auth.uid in request.resource.data.members &&
@@ -64,18 +58,32 @@ service cloud.firestore {
       allow create: if isGroupMember(request.resource.data.group_id);
     }
 
-    // ── Group Invites ──────────────────────────────────────────────────────
+    // ── Group Invites (link-based) ─────────────────────────────────────────
     match /group_invites/{inviteId} {
-      // Any authenticated user can read a specific invite (needed to validate token)
       allow get: if isAuthenticated();
-      // Only admins can list all invites for their group
       allow list: if isGroupAdmin(resource.data.group_id);
-      // Only admins can create invites
       allow create: if isGroupAdmin(request.resource.data.group_id);
-      // Any authenticated user can update an invite (to mark it as "used")
       allow update: if isAuthenticated();
-      // Only admins can delete invites
       allow delete: if isGroupAdmin(resource.data.group_id);
+    }
+
+    // ── Pending Invites (email-based) ──────────────────────────────────────
+    // Admin creates them; the invited user can read their own (by email match)
+    // and update (to mark accepted). AuthProvider handles acceptance server-side via admin SDK.
+    match /pending_invites/{inviteId} {
+      // Admin of the group can read, create, update, delete
+      allow read, create, update, delete: if isGroupAdmin(resource.data.group_id) ||
+        isGroupAdmin(request.resource.data.group_id);
+
+      // Invited user can read their own invite by email
+      allow read: if isAuthenticated() && resource.data.email == request.auth.token.email;
+
+      // Any authenticated user can query pending_invites by email
+      // (needed for AuthProvider's checkAndAcceptPendingInvite)
+      allow list: if isAuthenticated();
+
+      // Invited user can update their own invite (mark as accepted)
+      allow update: if isAuthenticated() && resource.data.email == request.auth.token.email;
     }
 
     // ── FCM Tokens ─────────────────────────────────────────────────────────
