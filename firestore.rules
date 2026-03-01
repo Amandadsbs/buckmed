@@ -42,20 +42,31 @@ service cloud.firestore {
 
     // ── Patients ───────────────────────────────────────────────────────────
     match /patients/{patientId} {
-      allow read, update, delete: if isGroupMember(resource.data.group_id);
+      allow read:   if isGroupMember(resource.data.group_id);
       allow create: if isGroupMember(request.resource.data.group_id);
+      // Must be a member AND group_id cannot be changed during update
+      allow update: if isGroupMember(resource.data.group_id) &&
+                       request.resource.data.group_id == resource.data.group_id;
+      allow delete: if isGroupMember(resource.data.group_id);
     }
 
     // ── Medications ────────────────────────────────────────────────────────
     match /medications/{medId} {
-      allow read, update, delete: if isGroupMember(resource.data.group_id);
+      allow read:   if isGroupMember(resource.data.group_id);
       allow create: if isGroupMember(request.resource.data.group_id);
+      allow update: if isGroupMember(resource.data.group_id) &&
+                       request.resource.data.group_id == resource.data.group_id;
+      allow delete: if isGroupMember(resource.data.group_id);
     }
 
     // ── Medication Logs ────────────────────────────────────────────────────
     match /medication_logs/{logId} {
-      allow read, update, delete: if isGroupMember(resource.data.group_id);
+      allow read:   if isGroupMember(resource.data.group_id);
       allow create: if isGroupMember(request.resource.data.group_id);
+      // Logs are only updated to mark completion — group_id must not change
+      allow update: if isGroupMember(resource.data.group_id) &&
+                       request.resource.data.group_id == resource.data.group_id;
+      allow delete: if isGroupMember(resource.data.group_id);
     }
 
     // ── Group Invites (link-based) ─────────────────────────────────────────

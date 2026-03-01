@@ -17,6 +17,7 @@ interface Patient {
     species?: string;
     birth_date?: string;
     notes?: string;
+    group_id: string;   // required for Firestore security rules
 }
 
 export default function EditPatientPage() {
@@ -30,6 +31,7 @@ export default function EditPatientPage() {
         birth_date: "",
         notes: "",
     });
+    const [groupId, setGroupId] = useState("");  // preserved from existing doc
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
@@ -39,6 +41,7 @@ export default function EditPatientPage() {
         getDoc(doc(db, "patients", id)).then((snap) => {
             if (!snap.exists()) { router.replace("/patients"); return; }
             const d = snap.data() as Patient;
+            setGroupId(d.group_id);           // ← preserve group_id for the update
             setForm({
                 name: d.name ?? "",
                 type: d.type ?? "human",
@@ -60,11 +63,15 @@ export default function EditPatientPage() {
         setError("");
         try {
             await updateDoc(doc(db, "patients", id), {
+                // group_id MUST be included so Firestore rules can verify
+                // request.resource.data.group_id == resource.data.group_id
+                group_id: groupId,
                 name: form.name.trim(),
                 type: form.type,
                 species: form.type === "pet" ? form.species.trim() || null : null,
                 birth_date: form.birth_date || null,
                 notes: form.notes.trim() || null,
+                updated_at: new Date().toISOString(),
             });
             router.push(`/patients/${id}`);
         } catch (err: any) {
