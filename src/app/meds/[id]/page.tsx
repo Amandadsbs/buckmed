@@ -45,16 +45,22 @@ export default function MedDetailPage() {
     useEffect(() => {
         if (!id) return;
         const fetchData = async () => {
-            const medSnap = await getDoc(doc(db, "medications", id));
-            if (!medSnap.exists()) { router.replace("/meds"); return; }
-            const medData = { id: medSnap.id, ...medSnap.data() } as Medication;
-            setMed(medData);
+            try {
+                const medSnap = await getDoc(doc(db, "medications", id));
+                if (!medSnap.exists()) { router.replace("/meds"); return; }
+                const medData = { id: medSnap.id, ...medSnap.data() } as Medication;
+                setMed(medData);
 
-            if (medData.patient_id) {
-                const pSnap = await getDoc(doc(db, "patients", medData.patient_id));
-                if (pSnap.exists()) setPatientName((pSnap.data() as { name: string }).name);
+                if (medData.patient_id) {
+                    const pSnap = await getDoc(doc(db, "patients", medData.patient_id));
+                    if (pSnap.exists()) setPatientName((pSnap.data() as { name: string }).name);
+                }
+            } catch (err) {
+                console.warn("[MedDetail] Fetch error:", err);
+                router.replace("/meds");
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         };
         fetchData();
     }, [id, router]);

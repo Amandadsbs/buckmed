@@ -53,17 +53,23 @@ export default function PatientDetailPage() {
     useEffect(() => {
         if (!id) return;
         const fetchData = async () => {
-            const patientSnap = await getDoc(doc(db, "patients", id));
-            if (!patientSnap.exists()) { router.replace("/patients"); return; }
-            setPatient({ id: patientSnap.id, ...patientSnap.data() } as Patient);
+            try {
+                const patientSnap = await getDoc(doc(db, "patients", id));
+                if (!patientSnap.exists()) { router.replace("/patients"); return; }
+                setPatient({ id: patientSnap.id, ...patientSnap.data() } as Patient);
 
-            const medsSnap = await getDocs(
-                query(collection(db, "medications"), where("patient_id", "==", id))
-            );
-            const list = medsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Medication));
-            list.sort((a, b) => a.name.localeCompare(b.name));
-            setMeds(list);
-            setLoading(false);
+                const medsSnap = await getDocs(
+                    query(collection(db, "medications"), where("patient_id", "==", id))
+                );
+                const list = medsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Medication));
+                list.sort((a, b) => a.name.localeCompare(b.name));
+                setMeds(list);
+            } catch (err) {
+                console.error("[PatientDetail] Permission/Fetch error:", err);
+                router.replace("/patients");
+            } finally {
+                setLoading(false);
+            }
         };
         fetchData();
     }, [id, router]);

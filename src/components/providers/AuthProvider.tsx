@@ -127,28 +127,6 @@ async function loadOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
             const legacyGroupId = groupsSnap.docs[0].id;
             console.log("[Auth] Restored legacy admin to group:", legacyGroupId);
 
-            // Retroactive Data Sync: Fix orphaned patients/meds/logs globally
-            // (One-time migration ran per admin login to capture old data)
-            const fixOrphans = async (collectionName: string) => {
-                const colRef = collection(db, collectionName);
-                const snapshot = await getDocs(colRef);
-                const batchUpdates: Promise<void>[] = [];
-                snapshot.forEach((docSnap) => {
-                    const data = docSnap.data();
-                    if (!data.group_id) {
-                        batchUpdates.push(updateDoc(docSnap.ref, { group_id: legacyGroupId }));
-                    }
-                });
-                if (batchUpdates.length > 0) {
-                    await Promise.all(batchUpdates);
-                    console.log(`[Auth] Synced ${batchUpdates.length} orphaned ${collectionName}`);
-                }
-            };
-
-            await fixOrphans("patients");
-            await fixOrphans("medications");
-            await fixOrphans("medication_logs");
-
             const updated: UserProfile = {
                 id: profile.id || fbUser.uid,
                 groups: [legacyGroupId],

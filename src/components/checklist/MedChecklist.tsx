@@ -78,9 +78,13 @@ export default function MedChecklist() {
                 const validMedIds = new Set<string>();
                 await Promise.all(
                     medIds.map(async (medId) => {
-                        const { getDoc: gd, doc: fd } = await import("firebase/firestore");
-                        const snap = await gd(fd(db, "medications", medId));
-                        if (snap.exists()) validMedIds.add(medId);
+                        try {
+                            const { getDoc: gd, doc: fd } = await import("firebase/firestore");
+                            const snap = await gd(fd(db, "medications", medId));
+                            if (snap.exists()) validMedIds.add(medId);
+                        } catch (e) {
+                            console.warn("[MedChecklist] Missing permission or error for medication", medId, e);
+                        }
                     })
                 );
                 // Keep only logs whose medication still exists
@@ -95,11 +99,16 @@ export default function MedChecklist() {
                         if (!pid) return log;
 
                         if (!patientCache[pid]) {
-                            const { getDoc, doc: firestoreDoc } = await import("firebase/firestore");
-                            const pSnap = await getDoc(firestoreDoc(db, "patients", pid));
-                            patientCache[pid] = pSnap.exists()
-                                ? (pSnap.data() as { name: string }).name
-                                : "Paciente desconhecido";
+                            try {
+                                const { getDoc, doc: firestoreDoc } = await import("firebase/firestore");
+                                const pSnap = await getDoc(firestoreDoc(db, "patients", pid));
+                                patientCache[pid] = pSnap.exists()
+                                    ? (pSnap.data() as { name: string }).name
+                                    : "Paciente desconhecido";
+                            } catch (e) {
+                                console.warn("[MedChecklist] Missing permission or error for patient", pid, e);
+                                patientCache[pid] = "Paciente desconhecido (Restrito)";
+                            }
                         }
 
                         return {
