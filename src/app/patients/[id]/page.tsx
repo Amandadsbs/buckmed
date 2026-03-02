@@ -56,10 +56,11 @@ export default function PatientDetailPage() {
             try {
                 const patientSnap = await getDoc(doc(db, "patients", id));
                 if (!patientSnap.exists()) { router.replace("/patients"); return; }
-                setPatient({ id: patientSnap.id, ...patientSnap.data() } as Patient);
+                const pData = patientSnap.data() as any;
+                setPatient({ id: patientSnap.id, ...pData } as Patient);
 
                 const medsSnap = await getDocs(
-                    query(collection(db, "medications"), where("patient_id", "==", id))
+                    query(collection(db, "medications"), where("patient_id", "==", id), where("group_id", "==", pData.group_id))
                 );
                 const list = medsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as Medication));
                 list.sort((a, b) => a.name.localeCompare(b.name));
