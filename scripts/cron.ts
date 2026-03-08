@@ -1,81 +1,160 @@
 #!/usr/bin/env node
 /**
  * scripts/cron.ts
- * Standalone Node.js process for self-hosted / local deployments where
- * Firebase Cloud Functions are not available.
+ * Standalone Node.js cron process — substituto gratuito das Firebase Cloud Functions.
  *
  * Schedules:
- *   • Every minute  → POST /api/cron/notify    (send push notifications for due meds)
- *   • Every midnight → GET  /api/meds/active   + POST /api/logs/generate  (pre-generate daily logs)
+ *   • A cada minuto   → POST /api/cron/notify       (push notifications de remédios)
+ *   • A cada meia-noite → /api/meds/active + /api/logs/generate (pré-gera logs do dia)
  *
- * Usage:
- *   npx ts-node scripts/cron.ts
+ * Como rodar:
+ *   npm run cron             (dev — ts-node, recarrega .env.local automaticamente)
+ *   npm run cron:start       (produção — pm2, reinicia automaticamente se cair)
  *
- * Required env vars (loaded from .env.local automatically by Next.js, but NOT here):
- *   NEXT_PUBLIC_APP_URL   — e.g. http://localhost:3000
- *   CRON_SECRET           — shared secret that protects /api/cron/notify
+ * Env vars obrigatórias (lidas do .env.local na raiz do projeto):
+ *   NEXT_PUBLIC_APP_URL  — ex: http://localhost:3000 ou https://seu-app.vercel.app
+ *   CRON_SECRET          — segredo compartilhado com /api/cron/notify
  */
 
-import cron from "node-cron";
-import axios from "axios";
+// ── Carrega .env.local ANTES de tudo (ts-node não faz isso automaticamente) ──
+import { config } from "dotenv";
+import { resolve } from "path";
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+// Sobe dois níveis: scripts/ → raiz do projeto
+config({ path: resolve(__dirname, "../.env.local") });
+
+import cron from "node-cron";
+import axios, { AxiosError } from "axios";
+
+// ─── Config ────────────────────────────────────────────────────────────────────
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const CRON_SECRET = process.env.CRON_SECRET ?? "";
 
+// ─── Startup banner ────────────────────────────────────────────────────────────
+console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+console.log("💊  MedTracker Cron — iniciando");
+console.log(`    App URL   : ${APP_URL}`);
+console.log(`    Secret    : ${CRON_SECRET ? "✅ configurado" : "⚠️  NÃO CONFIGURADO"}`);
+console.log(`    Iniciado  : ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`);
+console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
 if (!CRON_SECRET) {
-    console.warn("⚠️  CRON_SECRET is not set — /api/cron/notify endpoint is unprotected!");
+    console.warn("⚠️  CRON_SECRET ausente — o endpoint /api/cron/notify está desprotegido!");
 }
 
-console.log(`🕐 MedTracker Cron started. App URL: ${APP_URL}`);
+// ─── Helper: log com timestamp de Brasília ─────────────────────────────────────
+function timestamp(): string {
+    return new Date().toLocaleTimeString("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+}
 
-// ── Every minute: send push notifications for meds due RIGHT NOW ─────────────
-cron.schedule("* * * * *", async () => {
-    const now = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-    console.log(`[${now}] ⏰ Checking due medications...`);
-    try {
-        const res = await axios.post(
-            `${APP_URL}/api/cron/notify`,
-            {},
-            {
-                headers: {
-                    Authorization: `Bearer ${CRON_SECRET}`,
-                    "Content-Type": "application/json",
-                },
-                timeout: 30_000,
+// ─── Job 1: A cada minuto — verificar remédios pendentes e notificar ──────────
+cron.schedule(
+    "* * * * *",
+    async () => {
+        const ts = timestamp();
+        try {
+            const res = await axios.post<{
+                ok: boolean;
+                sent: number;
+                dueLogs?: number;
+                message?: string;
+                errors?: string[];
+            }>(
+                `${APP_URL}/api/cron/notify`,
+                {},
+                {
+                    headers: {
+                        Authorization: `Bearer ${CRON_SECRET}`,
+                        "Content-Type": "application/json",
+                    },
+                    timeout: 30_000,
+                }
+            );
+
+            const { sent, dueLogs, message, errors } = res.data;
+
+            if (sent > 0) {
+                console.log(`[${ts}] ✅ ${sent} notificação(ões) enviada(s) para ${dueLogs} remédio(s).`);
+            } else {
+                console.log(`[${ts}] ℹ️  ${message ?? "Nenhum remédio pendente agora."}`);
             }
-        );
-        const data = res.data as { ok: boolean; sent: number; dueLogs?: number; message?: string };
-        if (data.sent > 0) {
-            console.log(`  ✅ Notified ${data.sent} device(s) for ${data.dueLogs} log(s).`);
-        } else {
-            console.log(`  ℹ️  ${data.message ?? "No notifications sent."}`);
+
+            if (errors?.length) {
+                console.warn(`[${ts}] ⚠️  Erros FCM:`, errors.join(", "));
+            }
+        } catch (err) {
+            const axErr = err as AxiosError;
+            const detail = axErr.response?.data ?? axErr.message;
+            console.error(`[${ts}] ❌ Erro ao notificar:`, detail);
         }
-    } catch (err: any) {
-        console.error("  ❌ Notify error:", err.response?.data ?? err.message);
-    }
+    },
+    { timezone: "America/Sao_Paulo" }   // garante que o cron dispara no horário correto
+);
+
+// ─── Job 2: Meia-noite — gerar logs do próximo dia em batch ───────────────────
+cron.schedule(
+    "0 0 * * *",
+    async () => {
+        const ts = timestamp();
+        console.log(`[${ts}] 🌙 Gerando logs de medicação para amanhã...`);
+        try {
+            const medsRes = await axios.get<{ ok: boolean; meds: { id: string }[] }>(
+                `${APP_URL}/api/meds/active`,
+                {
+                    headers: { Authorization: `Bearer ${CRON_SECRET}` },
+                    timeout: 10_000,
+                }
+            );
+
+            const meds = medsRes.data.meds ?? [];
+            let generated = 0;
+
+            for (const med of meds) {
+                try {
+                    await axios.post(
+                        `${APP_URL}/api/logs/generate`,
+                        { medication_id: med.id },
+                        {
+                            headers: {
+                                "Content-Type": "application/json",
+                                Authorization: `Bearer ${CRON_SECRET}`,
+                            },
+                            timeout: 15_000,
+                        }
+                    );
+                    generated++;
+                } catch (genErr) {
+                    const e = genErr as AxiosError;
+                    console.error(`[${ts}] ❌ Erro ao gerar log para med ${med.id}:`, e.message);
+                }
+            }
+
+            console.log(`[${ts}] ✅ Logs gerados para ${generated}/${meds.length} medicamentos.`);
+        } catch (err) {
+            const axErr = err as AxiosError;
+            console.error(`[${ts}] ❌ Erro na geração de logs:`, axErr.response?.data ?? axErr.message);
+        }
+    },
+    { timezone: "America/Sao_Paulo" }
+);
+
+// ─── Graceful shutdown ─────────────────────────────────────────────────────────
+process.on("SIGINT", () => {
+    console.log("\n[CRON] Encerrando... (SIGINT)");
+    process.exit(0);
 });
 
-// ── Midnight: pre-generate tomorrow's medication log documents in Firestore ──
-cron.schedule("0 0 * * *", async () => {
-    console.log("[MIDNIGHT] Generating daily medication logs via API...");
-    try {
-        const medsRes = await axios.get(`${APP_URL}/api/meds/active`, {
-            headers: { Authorization: `Bearer ${CRON_SECRET}` },
-            timeout: 10_000,
-        });
+process.on("SIGTERM", () => {
+    console.log("\n[CRON] Encerrando... (SIGTERM)");
+    process.exit(0);
+});
 
-        const meds: { id: string }[] = medsRes.data.meds ?? [];
-
-        for (const med of meds) {
-            await axios.post(
-                `${APP_URL}/api/logs/generate`,
-                { medication_id: med.id, days_ahead: 1 },
-                { headers: { "Content-Type": "application/json" }, timeout: 15_000 }
-            );
-        }
-
-        console.log(`  ✅ Generated logs for ${meds.length} medications`);
-    } catch (err: any) {
-        console.error("  ❌ Midnight log generation error:", err.message);
-    }
+process.on("uncaughtException", (err) => {
+    console.error("[CRON] Erro não capturado:", err.message);
+    // Não encerra — deixa o processo vivo para o próximo tick do cron
 });
