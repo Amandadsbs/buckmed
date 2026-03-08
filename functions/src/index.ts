@@ -55,16 +55,29 @@ export const sendMedicationReminders = onSchedule(
     },
     async (_event) => {
         const now = new Date();
+        const TZ = "America/Sao_Paulo";
 
-        // Format: "YYYY-MM-DD"
-        const today = now.toISOString().split("T")[0];
+        // Convert `now` to Brasília local time using Intl API (no external deps)
+        // scheduled_time and scheduled_date are stored in local time, NOT UTC.
+        const localDateStr = new Intl.DateTimeFormat("sv-SE", {
+            timeZone: TZ,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).format(now); // → "YYYY-MM-DD"
 
-        // Format: "HH:MM" (zero-padded)
-        const currentTime = `${String(now.getUTCHours()).padStart(2, "0")}:${String(
-            now.getUTCMinutes()
-        ).padStart(2, "0")}`;
+        const localTimeStr = new Intl.DateTimeFormat("sv-SE", {
+            timeZone: TZ,
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        }).format(now); // → "HH:MM"
 
-        logger.info(`[sendMedicationReminders] Checking at ${today} ${currentTime} UTC`);
+        // "sv-SE" locale sometimes returns "24:MM" for midnight — normalise
+        const today = localDateStr;
+        const currentTime = localTimeStr === "24:00" ? "00:00" : localTimeStr;
+
+        logger.info(`[sendMedicationReminders] Checking at ${today} ${currentTime} (${TZ})`);
 
         // ── 1. Query pending logs due at this exact minute ───────────────────
         const logsSnap = await db

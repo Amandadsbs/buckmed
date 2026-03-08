@@ -19,7 +19,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 type BannerState = "idle" | "asking" | "granted" | "denied" | "dismissed";
 
 export default function PushNotificationInit() {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const [bannerState, setBannerState] = useState<BannerState>("idle");
     const [shouldInit, setShouldInit] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -45,7 +45,8 @@ export default function PushNotificationInit() {
 
     // Only activate the hook once the user confirms via the banner (or already granted)
     const { token, permission, error } = useFCMToken(
-        shouldInit && user ? user.uid : null
+        shouldInit && user ? user.uid : null,
+        shouldInit && profile ? profile.active_group : null
     );
 
     const handleAllow = () => {

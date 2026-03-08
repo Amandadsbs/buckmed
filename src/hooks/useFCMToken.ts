@@ -16,7 +16,7 @@ import { app, db } from "@/lib/firebase/client";
  *  - permission:  the current NotificationPermission state
  *  - error:       any error that occurred
  */
-export function useFCMToken(caregiverId: string | null) {
+export function useFCMToken(caregiverId: string | null, groupId?: string | null) {
     const [token, setToken] = useState<string | null>(null);
     const [permission, setPermission] = useState<NotificationPermission>("default");
     const [error, setError] = useState<string | null>(null);
@@ -86,6 +86,7 @@ export function useFCMToken(caregiverId: string | null) {
                     {
                         token: fcmToken,
                         caregiver_id: caregiverId,
+                        group_id: groupId ?? null,
                         platform: navigator.userAgent,
                         updated_at: serverTimestamp(),
                     },
@@ -100,7 +101,7 @@ export function useFCMToken(caregiverId: string | null) {
         };
 
         init();
-    }, [caregiverId]);
+    }, [caregiverId, groupId]);
 
     return { token, permission, error };
 }
