@@ -46,8 +46,8 @@ interface FcmToken {
  */
 export const sendMedicationReminders = onSchedule(
     {
-        // Run every minute
-        schedule: "* * * * *",
+        // Run every 30 minutes
+        schedule: "*/30 * * * *",
         timeZone: "America/Sao_Paulo", // Update to your local timezone
         region: "us-central1",
         memory: "256MiB",

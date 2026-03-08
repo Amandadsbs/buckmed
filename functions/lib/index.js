@@ -57,8 +57,8 @@ const messaging = admin.messaging();
  * Memory: 256MB  Timeout: 60s  Region: us-central1
  */
 exports.sendMedicationReminders = (0, scheduler_1.onSchedule)({
-    // Run every minute
-    schedule: "* * * * *",
+    // Run every 30 minutes
+    schedule: "*/30 * * * *",
     timeZone: "America/Sao_Paulo", // Update to your local timezone
     region: "us-central1",
     memory: "256MiB",

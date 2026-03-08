@@ -52,9 +52,9 @@ function timestamp(): string {
     });
 }
 
-// ─── Job 1: A cada minuto — verificar remédios pendentes e notificar ──────────
+// ─── Job 1: A cada 30 minutos — verificar remédios pendentes e notificar ──────
 cron.schedule(
-    "* * * * *",
+    "*/30 * * * *",
     async () => {
         const ts = timestamp();
         try {
