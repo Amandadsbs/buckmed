@@ -8,11 +8,21 @@ import {
     collection, query, where, getDocs, serverTimestamp, deleteDoc
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
+import { Loader2, Users, Check, X } from "lucide-react";
 
 interface UserProfile {
     id: string;
     groups: string[];
     active_group: string | null;
+}
+
+interface PendingEmailInvite {
+    id: string;
+    group_id: string;
+    email: string;
+    invited_by: string;
+    name?: string;
+    group_name?: string;
 }
 
 interface AuthContextType {
@@ -21,7 +31,6 @@ interface AuthContextType {
     loading: boolean;
     setActiveGroup: (groupId: string) => Promise<void>;
     refreshProfile: () => Promise<void>;
-    /** Re-runs pending_invite check for current user. Returns true if a new group was joined. */
     syncInvites: () => Promise<boolean>;
 }
 
@@ -39,64 +48,6 @@ function isInvitePage(): boolean {
     return window.location.pathname === "/invite";
 }
 
-/**
- * Check if a pending_invite exists for this user's email.
- * If found, auto-joins the group and marks the invite as accepted.
- * Returns the groupId if joined, null otherwise.
- */
-async function checkAndAcceptPendingInvite(uid: string, email: string): Promise<string | null> {
-    try {
-        const normalizedEmail = email.toLowerCase().trim();
-        console.log(`[Auth] Checking invites for email: ${normalizedEmail}`);
-
-        const invSnap = await getDocs(
-            query(
-                collection(db, "pending_invites"),
-                where("email", "==", normalizedEmail),
-                where("status", "==", "pending")
-            )
-        );
-
-        if (invSnap.empty) {
-            console.log(`[Auth] Error: User logged in but no group or invite found.`);
-            return null;
-        }
-
-        // Take the most recent invite if multiple exist
-        const inviteDoc = invSnap.docs[0];
-        const invite = inviteDoc.data() as {
-            group_id: string;
-            email: string;
-            invited_by: string;
-        };
-
-        const groupId = invite.group_id;
-        console.log(`[Auth] Match found! Binding user to group: ${groupId}`);
-
-        // 1. Add user to care_group.members
-        await updateDoc(doc(db, "care_groups", groupId), {
-            members: arrayUnion(uid),
-        });
-
-        // 2. Update / create user profile with the group
-        const userRef = doc(db, "users", uid);
-        await setDoc(userRef, {
-            groups: arrayUnion(groupId),
-            active_group: groupId,
-        }, { merge: true });
-
-        // 3. Delete the invitation record to clean up
-        await deleteDoc(inviteDoc.ref);
-
-        console.log("[Auth] ✅ User", uid, "accepted invite and joined group", groupId);
-        return groupId;
-
-    } catch (err: any) {
-        console.error("[Auth] Error checking pending invite:", err.message);
-        return null;
-    }
-}
-
 async function loadOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
     const userRef = doc(db, "users", fbUser.uid);
     const userSnap = await getDoc(userRef);
@@ -107,17 +58,6 @@ async function loadOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
 
         // Has a valid active group → done
         if (profile.groups?.length > 0 && profile.active_group) {
-            // Still check for new pending invites (in case admin added them later)
-            if (fbUser.email) {
-                const newGroupId = await checkAndAcceptPendingInvite(fbUser.uid, fbUser.email);
-                if (newGroupId && !profile.groups.includes(newGroupId)) {
-                    profile = {
-                        ...profile,
-                        groups: [...(profile.groups ?? []), newGroupId],
-                        active_group: newGroupId,
-                    };
-                }
-            }
             return profile;
         }
 
@@ -136,20 +76,6 @@ async function loadOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
             return updated;
         }
 
-        // Still no group → check pending invite by email
-        if (fbUser.email) {
-            const joinedGroupId = await checkAndAcceptPendingInvite(fbUser.uid, fbUser.email);
-            if (joinedGroupId) {
-                const updated: UserProfile = {
-                    id: profile.id || fbUser.uid,
-                    groups: [joinedGroupId],
-                    active_group: joinedGroupId,
-                };
-                await setDoc(userRef, updated, { merge: true });
-                return updated;
-            }
-        }
-
         // On /invite page → minimal profile, invite page handles the rest
         if (isInvitePage()) {
             return {
@@ -159,7 +85,7 @@ async function loadOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
             };
         }
 
-        // No invite, no legacy group → minimal profile, welcome page will handle
+        // Still no group → minimal profile, welcome page will handle
         const minimal: UserProfile = {
             id: profile.id || fbUser.uid,
             groups: [],
@@ -170,19 +96,6 @@ async function loadOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
     }
 
     // ── Brand new user ───────────────────────────────────────────────────
-    // Check pending invite by email first
-    if (fbUser.email) {
-        const joinedGroupId = await checkAndAcceptPendingInvite(fbUser.uid, fbUser.email);
-        if (joinedGroupId) {
-            const invitedProfile: UserProfile = {
-                id: fbUser.uid,
-                groups: [joinedGroupId],
-                active_group: joinedGroupId,
-            };
-            await setDoc(userRef, invitedProfile);
-            return invitedProfile;
-        }
-    }
 
     // On /invite page → minimal profile, invite page handles bindings
     if (isInvitePage()) {
@@ -191,29 +104,63 @@ async function loadOrCreateProfile(fbUser: FirebaseUser): Promise<UserProfile> {
         return minimal;
     }
 
-    // Truly new user with no invitation — create their own personal group
-    const newGroupId = `group_${fbUser.uid}`;
-    await setDoc(doc(db, "care_groups", newGroupId), {
-        id: newGroupId,
-        name: fbUser.displayName ? `Grupo de ${fbUser.displayName.split(" ")[0]}` : "Meu Grupo",
-        admin_id: fbUser.uid,
-        members: [fbUser.uid],
-        created_at: serverTimestamp(),
-    });
-
-    const newProfile: UserProfile = {
+    // Truly new user with no invitation — minimal profile, welcome page will prompt to create a group
+    const minimalProfile: UserProfile = {
         id: fbUser.uid,
-        groups: [newGroupId],
-        active_group: newGroupId,
+        groups: [],
+        active_group: null,
     };
-    await setDoc(userRef, newProfile);
-    return newProfile;
+    await setDoc(userRef, minimalProfile);
+    return minimalProfile;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<FirebaseUser | null>(null);
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
+
+    const [pendingInvites, setPendingInvites] = useState<PendingEmailInvite[]>([]);
+    const [isAccepting, setIsAccepting] = useState<string | null>(null);
+
+    const checkPendingInvites = async (email: string) => {
+        try {
+            const normalizedEmail = email.toLowerCase().trim();
+            const invSnap = await getDocs(
+                query(
+                    collection(db, "pending_invites"),
+                    where("email", "==", normalizedEmail),
+                    where("status", "==", "pending")
+                )
+            );
+
+            if (invSnap.empty) {
+                setPendingInvites([]);
+                return;
+            }
+
+            const invites: PendingEmailInvite[] = [];
+            for (const docSnap of invSnap.docs) {
+                const data = docSnap.data();
+                
+                let groupName = "Grupo Desconhecido";
+                try {
+                    const gSnap = await getDoc(doc(db, "care_groups", data.group_id));
+                    if (gSnap.exists()) {
+                        groupName = gSnap.data()?.name || groupName;
+                    }
+                } catch (e) {}
+
+                invites.push({
+                    id: docSnap.id,
+                    ...data,
+                    group_name: groupName
+                } as PendingEmailInvite);
+            }
+            setPendingInvites(invites);
+        } catch (err: any) {
+            console.error("[Auth] Error checking pending invites:", err.message);
+        }
+    };
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
@@ -222,10 +169,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const userProfile = await loadOrCreateProfile(fbUser);
                 setProfile(userProfile);
 
+                if (fbUser.email) {
+                    await checkPendingInvites(fbUser.email);
+                }
+
                 // Redirect /login → app
                 if (window.location.pathname === "/login") {
-                    // If user has no group, send to welcome
+                    // Do not redirect to welcome if there are pending invites about to show
                     if (!userProfile.active_group) {
+                        // wait a bit for pending invites to load before redirecting, or just let Welcome handle it
                         window.location.href = "/welcome";
                     } else {
                         window.location.href = "/today";
@@ -234,6 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } else {
                 setUser(null);
                 setProfile(null);
+                setPendingInvites([]);
 
                 const path = window.location.pathname;
                 if (path !== "/login" && path !== "/invite" && path !== "/welcome") {
@@ -255,27 +208,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     /**
      * Manually re-checks pending_invites for the current user's email.
-     * Use this from the /welcome page "Verificar Acesso" button.
-     * Returns true if a new group was joined, false otherwise.
+     * Returns true if there are invites (so Welcome page can show "convite encontrado").
      */
     const syncInvites = async (): Promise<boolean> => {
         if (!user?.email) return false;
-        try {
-            const joinedGroupId = await checkAndAcceptPendingInvite(user.uid, user.email);
-            if (!joinedGroupId) return false;
-
-            // Re-read the updated profile from Firestore
-            const snap = await getDoc(doc(db, "users", user.uid));
-            if (snap.exists()) {
-                const updated = snap.data() as UserProfile;
-                setProfile(updated);
-                console.log("[Auth] syncInvites ✅ joined group", joinedGroupId);
-            }
-            return true;
-        } catch (err: any) {
-            console.error("[Auth] syncInvites error:", err.message);
-            return false;
-        }
+        await checkPendingInvites(user.email);
+        return pendingInvites.length > 0;
     };
 
     const setActiveGroup = async (groupId: string) => {
@@ -284,9 +222,100 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile({ ...profile, active_group: groupId });
     };
 
+    const handleAcceptInvite = async (inviteId: string) => {
+        const invite = pendingInvites.find(i => i.id === inviteId);
+        if (!invite || !user) return;
+        
+        setIsAccepting(inviteId);
+        try {
+            await updateDoc(doc(db, "care_groups", invite.group_id), {
+                members: arrayUnion(user.uid),
+            });
+
+            await setDoc(doc(db, "users", user.uid), {
+                groups: arrayUnion(invite.group_id),
+                active_group: invite.group_id,
+            }, { merge: true });
+
+            await updateDoc(doc(db, "pending_invites", inviteId), {
+                status: "accepted",
+                accepted_by: user.uid,
+            });
+
+            setPendingInvites(prev => prev.filter(i => i.id !== inviteId));
+            await refreshProfile();
+
+            if (window.location.pathname === "/welcome" || window.location.pathname === "/login") {
+                window.location.href = "/today";
+            }
+        } catch (err: any) {
+            console.error(err);
+            alert("Erro ao aceitar convite: " + err.message);
+        } finally {
+            setIsAccepting(null);
+        }
+    };
+
+    const handleRejectInvite = async (inviteId: string) => {
+        if (!user) return;
+        setIsAccepting(inviteId); // disable buttons while processing
+        try {
+            await updateDoc(doc(db, "pending_invites", inviteId), {
+                status: "rejected",
+                rejected_by: user.uid,
+            });
+            setPendingInvites(prev => prev.filter(i => i.id !== inviteId));
+        } catch (err: any) {
+            console.error(err);
+        } finally {
+            setIsAccepting(null);
+        }
+    };
+
     return (
         <AuthContext.Provider value={{ user, profile, loading, setActiveGroup, refreshProfile, syncInvites }}>
             {children}
+
+            {/* Modal de Validação Dupla para Convites Pendentes */}
+            {pendingInvites.length > 0 && !loading && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white max-w-sm w-full rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        {pendingInvites.map(invite => (
+                            <div key={invite.id} className="p-6">
+                                <div className="w-16 h-16 mx-auto bg-primary/10 rounded-2xl flex items-center justify-center mb-5">
+                                    <Users size={32} className="text-primary" />
+                                </div>
+                                
+                                <h2 className="text-xl font-extrabold text-slate-800 text-center leading-tight mb-2">
+                                    Convite Recebido
+                                </h2>
+                                
+                                <p className="text-slate-500 text-sm text-center leading-relaxed">
+                                    Você foi convidado(a) para atuar como cuidador(a) no <strong className="text-slate-700">{invite.group_name}</strong>. Deseja acessar e compartilhar a gestão das medicações deste grupo?
+                                </p>
+                                
+                                <div className="mt-8 flex flex-col gap-3">
+                                    <button
+                                        onClick={() => handleAcceptInvite(invite.id)}
+                                        disabled={isAccepting === invite.id}
+                                        className="w-full h-12 rounded-full bg-primary hover:bg-primary/90 text-white font-bold text-[0.95rem] flex items-center justify-center gap-2 transition-all shadow-[0_4px_16px_rgba(37,99,235,0.25)]"
+                                    >
+                                        {isAccepting === invite.id ? <Loader2 size={18} className="animate-spin" /> : <><Check size={18} /> Aceitar e Acessar</>}
+                                    </button>
+                                    
+                                    <button
+                                        onClick={() => handleRejectInvite(invite.id)}
+                                        disabled={isAccepting === invite.id}
+                                        className="w-full h-12 rounded-full border-2 border-slate-200 text-slate-500 font-bold text-[0.95rem] flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors"
+                                    >
+                                        <X size={18} /> Recusar
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </AuthContext.Provider>
     );
 }

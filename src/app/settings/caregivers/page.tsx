@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
     ArrowLeft, Share2, Check, Users, Loader2,
     Trash2, Clock, Crown, UserMinus, RefreshCw,
-    UserPlus, Mail, User
+    UserPlus, Mail, User, Edit2, X
 } from "lucide-react";
 import {
     doc, setDoc, getDoc, getDocs, collection,
@@ -33,6 +33,11 @@ export default function CaregiversPage() {
     const [removingUid, setRemovingUid] = useState<string | null>(null);
     const [revokingId, setRevokingId] = useState<string | null>(null);
 
+    // Group rename state
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [editingGroupName, setEditingGroupName] = useState("");
+    const [isSavingName, setIsSavingName] = useState(false);
+
     // Link invite state
     const [linkLoading, setLinkLoading] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -53,6 +58,7 @@ export default function CaregiversPage() {
             if (!groupSnap.exists()) return;
             const gd = groupSnap.data();
             setGroupName(gd.name);
+            setEditingGroupName(gd.name);
             setIsAdmin(gd.admin_id === user.uid);
 
             // Load member profiles
@@ -87,6 +93,22 @@ export default function CaregiversPage() {
     }, [profile?.active_group, user]);
 
     useEffect(() => { loadData(); }, [loadData]);
+
+    const handleSaveGroupName = async () => {
+        if (!profile?.active_group || !editingGroupName.trim()) return;
+        setIsSavingName(true);
+        try {
+            await updateDoc(doc(db, "care_groups", profile.active_group), {
+                name: editingGroupName.trim()
+            });
+            setGroupName(editingGroupName.trim());
+            setIsEditingName(false);
+        } catch (err: any) {
+            alert("Erro ao renomear grupo: " + err.message);
+        } finally {
+            setIsSavingName(false);
+        }
+    };
 
     // ── Generate link invite ────────────────────────────────────────────────
     const handleShareLink = async () => {
@@ -216,8 +238,35 @@ export default function CaregiversPage() {
                     <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
                         <Users size={22} className="text-primary" />
                     </div>
-                    <div>
-                        <p className="font-extrabold text-slate-900 text-base m-0">{groupName}</p>
+                    <div className="flex-1">
+                        {!isEditingName ? (
+                            <div className="flex items-center gap-2">
+                                <p className="font-extrabold text-slate-900 text-base m-0 break-all">{groupName}</p>
+                                {isAdmin && (
+                                    <button 
+                                        onClick={() => setIsEditingName(true)} 
+                                        className="text-primary/70 hover:text-primary transition-colors flex items-center justify-center w-6 h-6 rounded-full hover:bg-primary/10 shrink-0"
+                                    >
+                                        <Edit2 size={13} />
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 max-w-full">
+                                <Input 
+                                    value={editingGroupName} 
+                                    onChange={(e) => setEditingGroupName(e.target.value)} 
+                                    className="h-8 text-sm font-bold w-[140px] px-2" 
+                                    autoFocus 
+                                />
+                                <button onClick={handleSaveGroupName} disabled={isSavingName} className="text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2 h-8 rounded text-xs font-bold font-semibold disabled:opacity-50 flex items-center justify-center shrink-0 transition-colors">
+                                    {isSavingName ? <Loader2 size={14} className="animate-spin" /> : "OK"}
+                                </button>
+                                <button onClick={() => { setIsEditingName(false); setEditingGroupName(groupName); }} disabled={isSavingName} className="text-slate-500 bg-slate-100 hover:bg-slate-200 w-8 h-8 rounded text-xs font-bold disabled:opacity-50 flex items-center justify-center shrink-0 transition-colors">
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        )}
                         <p className="text-xs text-slate-500 m-0 mt-0.5">{isAdmin ? "👑 Administrador" : "Membro"}</p>
                     </div>
                 </div>
