@@ -41,6 +41,9 @@ export default function LoginPage() {
         setError(null);
         try {
             const provider = new GoogleAuthProvider();
+            provider.setCustomParameters({
+                prompt: 'select_account'
+            });
             await signInWithPopup(auth, provider);
             router.push("/today");
         } catch (err: any) {
