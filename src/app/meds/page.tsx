@@ -36,7 +36,7 @@ export default function MedsPage() {
     const [showHistory, setShowHistory] = useState(false);
 
     useEffect(() => {
-        if (!profile?.active_group) {
+        if (!profile?.groups || profile.groups.length === 0) {
             setMeds([]);
             setLoading(false);
             return;
@@ -45,12 +45,12 @@ export default function MedsPage() {
         const fetchMeds = async () => {
             const q = query(
                 collection(db, "medications"),
-                where("group_id", "==", profile.active_group)
+                where("group_id", "in", profile.groups.slice(0, 10))
             );
             const snap = await getDocs(q);
 
             const patsSnap = await getDocs(
-                query(collection(db, "patients"), where("group_id", "==", profile.active_group))
+                query(collection(db, "patients"), where("group_id", "in", profile.groups.slice(0, 10)))
             );
             const patientMap = Object.fromEntries(
                 patsSnap.docs.map((pd) => [pd.id, { id: pd.id, ...pd.data() } as Patient])
@@ -76,7 +76,7 @@ export default function MedsPage() {
         };
 
         fetchMeds();
-    }, [profile?.active_group]);
+    }, [profile?.groups]);
 
     const activeMeds = meds.filter(isActive);
     const historicMeds = meds.filter((m) => !isActive(m));
