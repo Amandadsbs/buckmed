@@ -48,7 +48,7 @@ export default function MedChecklist() {
     }, []);
 
     useEffect(() => {
-        if (!profile?.groups || profile.groups.length === 0) {
+        if (!profile?.active_group) {
             setLoading(false);
             setLogs([]);
             return;
@@ -59,7 +59,7 @@ export default function MedChecklist() {
 
         const q = query(
             collection(db, "medication_logs"),
-            where("group_id", "in", profile.groups.slice(0, 10)),
+            where("group_id", "==", profile.active_group),
             where("scheduled_date", "==", dateStr)
         );
 
@@ -132,7 +132,7 @@ export default function MedChecklist() {
         );
 
         return () => unsubscribe();
-    }, [dateStr, profile?.groups]);
+    }, [dateStr, profile?.active_group]);
 
     const handleToggleDone = async (log: EnrichedLog, currentlyDone: boolean) => {
         if (pendingIds.has(log.id) || isOffline) return;

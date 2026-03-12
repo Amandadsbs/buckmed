@@ -14,19 +14,19 @@ export default function PatientsPage() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (!profile?.groups || profile.groups.length === 0) {
+        if (!profile?.active_group) {
             setPatients([]);
             setLoading(false);
             return;
         }
-        const q = query(collection(db, "patients"), where("group_id", "in", profile.groups.slice(0, 10)));
+        const q = query(collection(db, "patients"), where("group_id", "==", profile.active_group));
         getDocs(q).then((snap) => {
             const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Patient));
             data.sort((a, b) => a.name.localeCompare(b.name));
             setPatients(data);
             setLoading(false);
         });
-    }, [profile?.groups]);
+    }, [profile?.active_group]);
 
     return (
         <div className="max-w-md mx-auto px-4 py-6 pb-28 animate-fade-in min-h-dvh">
